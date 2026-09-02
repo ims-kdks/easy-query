@@ -60,6 +60,13 @@ npm run check
 npm run format
 ```
 
+## Synthetic Demo Database
+
+The deterministic synthetic urban-mobility Postgres dataset and seeding instructions live in
+[`scripts/metro_move`](scripts/metro_move/README.md). The generated data is
+fictional, contains no personal information, and does not incorporate third-party
+datasets.
+
 ## Usage
 
 1. **Load files**: Drag and drop CSV/TSV/Parquet/JSON/JSONL files anywhere on the page, or click the upload area to browse
