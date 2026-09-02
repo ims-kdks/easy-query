@@ -149,14 +149,14 @@ function buildQueryWrapper(sql: string): string {
   return `SELECT * FROM (${sql}) AS "__csv_studio_result"`;
 }
 
-export async function loadDataFile(file: File): Promise<string | null> {
+export async function loadDataFile(file: File): Promise<void> {
   if (!db || !conn) {
     await initDatabase();
   }
 
   if (!db || !conn) {
     databaseState.update((s) => ({ ...s, error: "Database not initialized" }));
-    return null;
+    return;
   }
 
   try {
@@ -269,7 +269,6 @@ export async function loadDataFile(file: File): Promise<string | null> {
         `Loaded file: ${file.name} as table "${tableName}", ${rowCount} rows, ${columns.length} columns`,
       );
     }
-    return tableName;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to load file";
@@ -279,7 +278,6 @@ export async function loadDataFile(file: File): Promise<string | null> {
       error: message,
     }));
     console.error("File load error:", error);
-    return null;
   }
 }
 

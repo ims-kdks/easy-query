@@ -16,15 +16,10 @@ import Icon from "./Icon.svelte";
 
 interface Props {
   compact?: boolean;
-  compactIconOnly?: boolean;
   onfileselectmultiple?: (files: File[]) => void | Promise<void>;
 }
 
-let {
-  compact = false,
-  compactIconOnly = false,
-  onfileselectmultiple,
-}: Props = $props();
+let { compact = false, onfileselectmultiple }: Props = $props();
 let fileInput: HTMLInputElement;
 let isDropActive = $state(false);
 let pageDragDepth = 0;
@@ -177,15 +172,11 @@ onDestroy(() => {
     <button
         type="button"
         onclick={openFilePicker}
-        class="{compactIconOnly ? 'h-9 w-9 px-0' : 'w-full px-3 py-1.5'} flex items-center justify-center gap-2 text-sm bg-slate-800 hover:bg-slate-700
+        class="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700
            border border-slate-600 rounded-lg transition-colors"
-        aria-label={compactIconOnly ? "Add files" : undefined}
-        title={compactIconOnly ? "Add files" : undefined}
     >
-        <Icon name={compactIconOnly ? "plus" : "upload"} class="w-4 h-4" />
-        {#if !compactIconOnly}
-            <span>Add More Files</span>
-        {/if}
+        <Icon name="upload" class="w-4 h-4" />
+        <span>Add More Files</span>
     </button>
 {:else}
     <!-- Full drop zone for welcome screen -->

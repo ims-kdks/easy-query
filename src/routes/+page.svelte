@@ -2,7 +2,6 @@
 import { onMount } from "svelte";
 import { JsonLd, MetaTags } from "svelte-meta-tags";
 import { dev } from "$app/environment";
-import Header from "$lib/components/Header.svelte";
 import Modal from "$lib/components/Modal.svelte";
 import StatusBar from "$lib/components/StatusBar.svelte";
 import WelcomeScreen from "$lib/components/WelcomeScreen.svelte";
@@ -48,14 +47,10 @@ const structuredData = {
 };
 
 let showWelcome = $derived($databaseState.tables.length === 0);
-let activeTable = $state<string | null>(null);
 let baseQuery = $state<string | null>(null);
 let activeSort = $state<SortState | null>(null);
 let activeFilter = $state<FilterState | null>(null);
 let activeSearchTerm = $state("");
-let editorQuery = $derived(
-  baseQuery || buildDefaultTableQuery(activeTable ?? undefined),
-);
 
 function ensureBaseQuery(): string {
   const resolved = stripTrailingSemicolons(
@@ -105,10 +100,7 @@ function applyUiQuery() {
 
 async function handleFilesSelect(files: File[]) {
   for (const file of files) {
-    const tableName = await loadDataFile(file);
-    if (tableName) {
-      activeTable = tableName;
-    }
+    await loadDataFile(file);
   }
 }
 
@@ -152,31 +144,9 @@ function handleOpenExportDialog() {
 }
 
 function handleTableClick(tableName: string) {
-  activeTable = tableName;
   const query = buildTableQuery(tableName);
   setBaseQuery(query);
   executeQuery(query);
-}
-
-async function handleTableDelete(tableName: string) {
-  const tableIndex = $databaseState.tables.findIndex(
-    (table) => table.name === tableName,
-  );
-  const remainingTables = $databaseState.tables.filter(
-    (table) => table.name !== tableName,
-  );
-  const nextTable =
-    remainingTables[Math.min(tableIndex, remainingTables.length - 1)] ?? null;
-  const wasActive = activeTable === tableName;
-
-  await dropTable(tableName);
-
-  if (wasActive) {
-    activeTable = nextTable?.name ?? null;
-    if (nextTable) {
-      handleTableClick(nextTable.name);
-    }
-  }
 }
 
 async function handleExport(format: ExportFormat) {
@@ -200,17 +170,6 @@ let pendingRestoreCount = $state(0);
 let isRestoring = $state(false);
 
 $effect(() => {
-  const tables = $databaseState.tables;
-  if (tables.length === 0) {
-    activeTable = null;
-    return;
-  }
-  if (!activeTable || !tables.some((table) => table.name === activeTable)) {
-    activeTable = tables[0].name;
-  }
-});
-
-$effect(() => {
   const lastQuery = $databaseState.lastQuery;
   if (!lastQuery) return;
 
@@ -231,7 +190,6 @@ async function handleRestorePendingFiles() {
   try {
     const restoredCount = await restorePendingFiles();
     if (restoredCount > 0) {
-      activeTable = $databaseState.tables.at(-1)?.name ?? null;
       if (dev) {
         console.info(`Restored ${restoredCount} file(s) from previous session`);
       }
@@ -248,7 +206,6 @@ onMount(async () => {
   // Try to auto-restore files with already-granted permission
   const restoredCount = await restoreFromStoredHandles();
   if (restoredCount > 0) {
-    activeTable = $databaseState.tables.at(-1)?.name ?? null;
     if (dev) {
       console.info(
         `Auto-restored ${restoredCount} file(s) from previous session`,
@@ -282,15 +239,6 @@ onMount(async () => {
 <JsonLd schema={structuredData} />
 
 <div class="page-container">
-  <Header
-    showWorkspaceActions={!showWelcome}
-    searchValue={activeSearchTerm}
-    isQuerying={$databaseState.isQuerying}
-    {isExporting}
-    onsearch={handleSearch}
-    onopenexport={handleOpenExportDialog}
-  />
-
   <!-- Main Content -->
   <main class="main-content">
     {#if showWelcome}
@@ -308,14 +256,15 @@ onMount(async () => {
         rows={$databaseState.rows}
         totalRows={$databaseState.totalRows}
         isQuerying={$databaseState.isQuerying}
-        {activeTable}
-        query={editorQuery}
+        {isExporting}
         onquery={handleQuery}
         onfileselectmultiple={handleFilesSelect}
-        ontabledelete={handleTableDelete}
+        ontabledelete={dropTable}
         ontableclick={handleTableClick}
+        onsearch={handleSearch}
         onsort={handleSort}
         onfilter={handleFilter}
+        onopenexport={handleOpenExportDialog}
       />
     {/if}
   </main>
@@ -376,7 +325,7 @@ onMount(async () => {
   .page-container {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
   }
 

@@ -10,19 +10,12 @@ import Icon from "./Icon.svelte";
 
 interface Props {
   tables: TableInfo[];
-  query: string;
   isLoading?: boolean;
   onexecute?: (query: string) => void;
   oncollapse?: () => void;
 }
 
-let {
-  tables,
-  query,
-  isLoading = false,
-  onexecute,
-  oncollapse,
-}: Props = $props();
+let { tables, isLoading = false, onexecute, oncollapse }: Props = $props();
 
 let editorContainer: HTMLDivElement;
 let editor = $state<EditorView | null>(null);
@@ -143,7 +136,7 @@ onMount(() => {
 
   editor = new EditorView({
     state: EditorState.create({
-      doc: query || defaultQuery(),
+      doc: defaultQuery(),
       extensions: [
         executeKeymap, // Must be first with highest priority
         basicSetup,
@@ -158,18 +151,6 @@ onMount(() => {
   return () => {
     editor?.destroy();
   };
-});
-
-$effect(() => {
-  if (!editor || !query || editor.state.doc.toString() === query) return;
-
-  editor.dispatch({
-    changes: {
-      from: 0,
-      to: editor.state.doc.length,
-      insert: query,
-    },
-  });
 });
 
 // Detect platform for keyboard shortcut display
