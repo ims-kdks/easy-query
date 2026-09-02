@@ -13,6 +13,7 @@ type IconName =
   | "alert-circle"
   | "clock"
   | "code"
+  | "plus"
   | "upload"
   | "download"
   | "chat"
@@ -103,6 +104,8 @@ let strokeWidth = $derived(name === "panel" ? 1.6 : 2);
             <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         {:else if name === "code"}
             <path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+        {:else if name === "plus"}
+            <path d="M12 5v14M5 12h14" />
         {:else if name === "upload"}
             <path
                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"

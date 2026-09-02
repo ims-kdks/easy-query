@@ -11,7 +11,6 @@ import {
 import DataTable from "./DataTable.svelte";
 import FileUpload from "./FileUpload.svelte";
 import Icon from "./Icon.svelte";
-import SearchInput from "./SearchInput.svelte";
 import SQLEditor from "./SQLEditor.svelte";
 
 interface Props {
@@ -20,15 +19,14 @@ interface Props {
   rows: Record<string, unknown>[];
   totalRows: number;
   isQuerying: boolean;
-  isExporting: boolean;
+  activeTable: string | null;
+  query: string;
   onquery?: (sql: string) => void | Promise<void>;
   onfileselectmultiple?: (files: File[]) => void | Promise<void>;
   ontabledelete?: (tableName: string) => void | Promise<void>;
   ontableclick?: (tableName: string) => void;
-  onsearch?: (searchTerm: string) => void;
   onsort?: (data: { column: string; direction: SortDirection }) => void;
   onfilter?: (data: { column: string; value: string }) => void;
-  onopenexport?: () => void;
 }
 
 let {
@@ -37,15 +35,14 @@ let {
   rows,
   totalRows,
   isQuerying,
-  isExporting,
+  activeTable,
+  query,
   onquery,
   onfileselectmultiple,
   ontabledelete,
   ontableclick,
-  onsearch,
   onsort,
   onfilter,
-  onopenexport,
 }: Props = $props();
 
 // Panel width persistence
@@ -55,12 +52,6 @@ const DEFAULT_PANEL_WIDTH = 384; // w-96 = 24rem = 384px
 let panelWidth = $state(DEFAULT_PANEL_WIDTH);
 let isCollapsed = $state(false);
 let isResizing = $state(false);
-
-// Tables section height persistence
-const MIN_TABLES_HEIGHT = 120;
-const DEFAULT_TABLES_HEIGHT = 200;
-let tablesHeight = $state(DEFAULT_TABLES_HEIGHT);
-let isResizingTables = $state(false);
 let isDropActive = $state(false);
 let pageDragDepth = 0;
 let feedbackMessage = $state<string | null>(null);
@@ -70,7 +61,6 @@ let feedbackTimer: ReturnType<typeof setTimeout> | null = null;
 $effect(() => {
   const savedWidth = localStorage.getItem("csvstudio:panelWidth");
   const savedCollapsed = localStorage.getItem("csvstudio:panelCollapsed");
-  const savedTablesHeight = localStorage.getItem("csvstudio:tablesHeight");
 
   if (savedWidth) {
     const width = Number.parseInt(savedWidth, 10);
@@ -85,12 +75,6 @@ $effect(() => {
   if (savedCollapsed === "true") {
     isCollapsed = true;
   }
-  if (savedTablesHeight) {
-    const height = Number.parseInt(savedTablesHeight, 10);
-    if (!Number.isNaN(height) && height >= MIN_TABLES_HEIGHT) {
-      tablesHeight = height;
-    }
-  }
 });
 
 // Persist state when it changes
@@ -100,10 +84,6 @@ $effect(() => {
 
 $effect(() => {
   localStorage.setItem("csvstudio:panelCollapsed", String(isCollapsed));
-});
-
-$effect(() => {
-  localStorage.setItem("csvstudio:tablesHeight", String(tablesHeight));
 });
 
 function startResize(e: MouseEvent) {
@@ -121,29 +101,6 @@ function startResize(e: MouseEvent) {
 
   function onUp() {
     isResizing = false;
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-  }
-
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("mouseup", onUp);
-}
-
-function startResizeTables(e: MouseEvent) {
-  e.preventDefault();
-  isResizingTables = true;
-
-  const startY = e.clientY;
-  const startHeight = tablesHeight;
-
-  function onMove(e: MouseEvent) {
-    const delta = startY - e.clientY;
-    const newHeight = startHeight + delta;
-    tablesHeight = Math.max(MIN_TABLES_HEIGHT, newHeight);
-  }
-
-  function onUp() {
-    isResizingTables = false;
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
   }
@@ -254,79 +211,11 @@ onDestroy(() => {
                 <SQLEditor
                     onexecute={onquery}
                     {tables}
+                    {query}
                     isLoading={isQuerying}
                     oncollapse={toggleCollapse}
                 />
             </div>
-
-            {#if tables.length > 0}
-                <!-- Tables list resize handle -->
-                <button
-                    type="button"
-                    class="h-1 cursor-ns-resize hover:bg-emerald-500/50 transition-colors {isResizingTables
-                        ? 'bg-emerald-500/50'
-                        : ''}"
-                    onmousedown={startResizeTables}
-                    aria-label="Resize tables section"
-                ></button>
-
-                <div
-                    class="flex-none border-t border-slate-700 bg-slate-800/30 flex flex-col overflow-hidden"
-                    style="height: {tablesHeight}px"
-                >
-                    <div class="px-3 py-2.5 flex-1 overflow-y-auto min-h-0">
-                        <h3 class="text-xs font-medium text-slate-400 mb-2">
-                            {tables.length}
-                            {tables.length === 1 ? "table" : "tables"} loaded
-                        </h3>
-                        <div class="space-y-1.5">
-                            {#each tables as table (table.name)}
-                                <div class="flex items-stretch gap-1">
-                                    <button
-                                        type="button"
-                                        class="flex w-7 items-center justify-center self-stretch rounded border border-slate-700 text-slate-500 hover:text-red-400 hover:border-red-400 hover:bg-red-500/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
-                                        aria-label={`Delete ${table.name}`}
-                                        title={`Delete ${table.name}`}
-                                        onclick={() =>
-                                            ontabledelete?.(table.name)}
-                                    >
-                                        <Icon name="trash" class="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="flex-1 text-left text-xs p-2 rounded bg-slate-900 border border-slate-700 hover:border-emerald-500 hover:bg-emerald-500/5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
-                                        onclick={() =>
-                                            ontableclick?.(table.name)}
-                                        title={`View ${table.name}`}
-                                        aria-label={`View ${table.name}`}
-                                    >
-                                        <div class="font-medium text-slate-200">
-                                            {table.name}
-                                        </div>
-                                        <div class="text-slate-500 mt-0.5">
-                                            {table.rowCount.toLocaleString()} rows
-                                            - {table.columns.length} columns
-                                        </div>
-                                        <div
-                                            class="text-[10px] text-slate-600 mt-0.5 truncate"
-                                            title={table.fileName}
-                                        >
-                                            {table.fileName}
-                                        </div>
-                                    </button>
-                                </div>
-                            {/each}
-                        </div>
-
-                        <div class="mt-3 pt-3 border-t border-slate-700">
-                            <p class="text-xs font-medium text-slate-400 mb-2">
-                                Add more files
-                            </p>
-                            <FileUpload compact={true} {onfileselectmultiple} />
-                        </div>
-                    </div>
-                </div>
-            {/if}
 
             <!-- Horizontal resize handle -->
             <button
@@ -366,28 +255,49 @@ onDestroy(() => {
 
     <div class="flex-1 flex flex-col overflow-hidden bg-slate-900">
         <div
-            class="flex-none bg-slate-800/30 border-b border-slate-700 px-4 py-2.5"
+            class="flex-none border-b border-slate-700 bg-slate-950/50 px-2 pt-2"
         >
-            <div class="flex items-center gap-3">
-                <SearchInput
-                    placeholder="Search all columns..."
-                    mode="enter"
-                    {onsearch}
-                />
-                <button
-                    type="button"
-                    class="ml-auto inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    onclick={() => onopenexport?.()}
-                    disabled={isExporting || isQuerying || tables.length === 0}
-                >
-                    {#if isExporting}
-                        <Icon name="spinner" class="w-4 h-4 animate-spin" />
-                        Exporting
-                    {:else}
-                        <Icon name="download" class="w-4 h-4" />
-                        Export
-                    {/if}
-                </button>
+            <div
+                class="flex items-end gap-1 overflow-x-auto"
+                role="tablist"
+                aria-label="Open tables"
+            >
+                {#each tables as table (table.name)}
+                    {@const isActive = table.name === activeTable}
+                    <div
+                        class="group flex min-w-36 max-w-56 flex-none items-center rounded-t-lg border border-b-0 {isActive
+                            ? 'border-slate-600 bg-slate-900 text-slate-100'
+                            : 'border-transparent bg-slate-800/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
+                    >
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={isActive}
+                            tabindex="0"
+                            class="min-w-0 flex-1 truncate px-3 py-2 text-left text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500/60"
+                            onclick={() => ontableclick?.(table.name)}
+                            title={`${table.name} · ${table.fileName}`}
+                        >
+                            {table.name}
+                        </button>
+                        <button
+                            type="button"
+                            class="mr-1 flex h-6 w-6 flex-none items-center justify-center rounded text-slate-500 opacity-70 transition-colors hover:bg-slate-700 hover:text-red-400 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 group-hover:opacity-100"
+                            aria-label={`Close ${table.name}`}
+                            title={`Close ${table.name}`}
+                            onclick={() => ontabledelete?.(table.name)}
+                        >
+                            <Icon name="x" class="h-3.5 w-3.5" />
+                        </button>
+                    </div>
+                {/each}
+                <div class="flex-none pb-1 pl-1">
+                    <FileUpload
+                        compact={true}
+                        compactIconOnly={true}
+                        {onfileselectmultiple}
+                    />
+                </div>
             </div>
         </div>
 
