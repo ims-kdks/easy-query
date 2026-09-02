@@ -55,7 +55,7 @@ let {
 
         <div>
           <img
-            src="/screenshot-v0.7.png"
+            src="/screenshot-v0.1.png"
             alt={`${brand} interface screenshot`}
             class="w-full rounded-xl border border-slate-700 shadow-lg bg-slate-300 hover:bg-slate-100 transition-all duration-500 ease-out"
             loading="lazy"
