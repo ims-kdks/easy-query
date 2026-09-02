@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+:root {
+  --scrollbar-thumb: #475569;
+  --scrollbar-track: #1e293b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  color: #e2e8f0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* Selection */
+::selection {
+  background: #10b981;
+  color: #0f172a;
+}
+
+/* Focus outline */
+:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+
+/* CodeMirror theme overrides */
+.cm-editor {
+  height: 100%;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.cm-editor .cm-scroller {
+  font-family: "JetBrains Mono", monospace;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+/* CodeMirror completion icons */
+.cm-completionIcon-table::before {
+  content: "T";
+  font-weight: 600;
+}
+
+.cm-completionIcon-column::before {
+  content: "C";
+  font-weight: 600;
+}
+
+/* CodeMirror autocomplete dropdown */
+.cm-editor .cm-tooltip.cm-tooltip-autocomplete,
+.cm-editor .cm-tooltip-autocomplete {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.6);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+.cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul,
+.cm-editor .cm-tooltip-autocomplete > ul {
+  background: #0f172a;
+  max-height: 240px;
+}
+
+.cm-editor .cm-tooltip.cm-tooltip-autocomplete li,
+.cm-editor .cm-tooltip-autocomplete li {
+  padding: 6px 8px;
+}
+
+.cm-editor .cm-tooltip.cm-tooltip-autocomplete li[aria-selected],
+.cm-editor .cm-tooltip.cm-tooltip-autocomplete li[aria-selected="true"],
+.cm-editor .cm-tooltip-autocomplete li[aria-selected],
+.cm-editor .cm-tooltip-autocomplete li[aria-selected="true"] {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.cm-editor .cm-tooltip-autocomplete .cm-completionLabel {
+  color: #e2e8f0;
+}
+
+.cm-editor .cm-tooltip-autocomplete .cm-completionDetail {
+  color: #94a3b8;
+  margin-left: 8px;
+}
+
+.cm-editor .cm-tooltip-autocomplete .cm-completionIcon {
+  margin-right: 6px;
+  color: #10b981;
+}
