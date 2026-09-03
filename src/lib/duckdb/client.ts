@@ -26,6 +26,28 @@ export interface TableInfo {
   rowCount: number;
 }
 
+export interface CatalogTableInfo {
+  catalog: string;
+  schema: string;
+  name: string;
+  type: string;
+  sourceFile: string | null;
+  rowCount: number | null;
+  columns: Array<ColumnInfo & { nullable: boolean }>;
+}
+
+export interface WebMCPQueryResult {
+  ok: boolean;
+  sql: string;
+  statementType: string;
+  columns: ColumnInfo[];
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  executionMs: number | null;
+  catalogChanged: boolean;
+  error: string | null;
+}
+
 export type ExportFormat = "csv" | "tsv" | "parquet";
 
 export interface DatabaseState {
@@ -147,6 +169,33 @@ function isReadableQuery(sql: string): boolean {
 
 function buildQueryWrapper(sql: string): string {
   return `SELECT * FROM (${sql}) AS "__csv_studio_result"`;
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw (
+      signal.reason ??
+      new DOMException("Tool execution cancelled", "AbortError")
+    );
+  }
+}
+
+function serializeValue(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "bigint") return value.toString();
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Uint8Array) return Array.from(value);
+  if (Array.isArray(value)) return value.map(serializeValue);
+
+  if (typeof value === "object") {
+    const record: Record<string, unknown> = {};
+    for (const [key, nestedValue] of Object.entries(value)) {
+      record[key] = serializeValue(nestedValue);
+    }
+    return record;
+  }
+
+  return value;
 }
 
 export async function loadDataFile(file: File): Promise<string | null> {
@@ -284,12 +333,260 @@ export async function loadDataFile(file: File): Promise<string | null> {
 }
 
 /**
+ * Read the live DuckDB catalog for WebMCP agents.
+ */
+export async function listCatalogTables(
+  signal?: AbortSignal,
+): Promise<CatalogTableInfo[]> {
+  if (!db || !conn) {
+    await initDatabase();
+  }
+
+  if (!conn) {
+    throw new Error("Database not initialized");
+  }
+
+  throwIfAborted(signal);
+
+  const tablesResult = await conn.query(`
+    SELECT table_catalog, table_schema, table_name, table_type
+    FROM information_schema.tables
+    WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+    ORDER BY table_catalog, table_schema, table_name
+  `);
+  const columnsResult = await conn.query(`
+    SELECT table_catalog, table_schema, table_name, column_name, data_type, is_nullable
+    FROM information_schema.columns
+    WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+    ORDER BY table_catalog, table_schema, table_name, ordinal_position
+  `);
+
+  const columnsByTable = new Map<
+    string,
+    Array<ColumnInfo & { nullable: boolean }>
+  >();
+
+  for (let index = 0; index < columnsResult.numRows; index++) {
+    const catalog = String(columnsResult.getChildAt(0)?.get(index) ?? "");
+    const schema = String(columnsResult.getChildAt(1)?.get(index) ?? "");
+    const name = String(columnsResult.getChildAt(2)?.get(index) ?? "");
+    const key = `${catalog}\u0000${schema}\u0000${name}`;
+    const columns = columnsByTable.get(key) ?? [];
+    columns.push({
+      name: String(columnsResult.getChildAt(3)?.get(index) ?? ""),
+      type: String(columnsResult.getChildAt(4)?.get(index) ?? ""),
+      nullable:
+        String(columnsResult.getChildAt(5)?.get(index) ?? "YES") === "YES",
+    });
+    columnsByTable.set(key, columns);
+  }
+
+  const loadedTables = get(databaseState).tables;
+  const tables: CatalogTableInfo[] = [];
+
+  for (let index = 0; index < tablesResult.numRows; index++) {
+    throwIfAborted(signal);
+
+    const catalog = String(tablesResult.getChildAt(0)?.get(index) ?? "");
+    const schema = String(tablesResult.getChildAt(1)?.get(index) ?? "");
+    const name = String(tablesResult.getChildAt(2)?.get(index) ?? "");
+    const type = String(tablesResult.getChildAt(3)?.get(index) ?? "");
+    const key = `${catalog}\u0000${schema}\u0000${name}`;
+    let rowCount: number | null = null;
+
+    try {
+      const qualifiedName = `"${escapeIdentifier(catalog)}"."${escapeIdentifier(schema)}"."${escapeIdentifier(name)}"`;
+      const countResult = await conn.query(
+        `SELECT COUNT(*) AS count FROM ${qualifiedName}`,
+      );
+      rowCount = Number(countResult.getChildAt(0)?.get(0) ?? 0);
+    } catch {
+      // Some catalog objects cannot be counted without arguments or permissions.
+    }
+
+    tables.push({
+      catalog,
+      schema,
+      name,
+      type,
+      sourceFile:
+        schema === "main"
+          ? (loadedTables.find((table) => table.name === name)?.fileName ??
+            null)
+          : null,
+      rowCount,
+      columns: columnsByTable.get(key) ?? [],
+    });
+  }
+
+  return tables;
+}
+
+export function reconcileLoadedTables(catalogTables: CatalogTableInfo[]) {
+  const mainTables = new Map(
+    catalogTables
+      .filter((table) => table.schema === "main")
+      .map((table) => [table.name, table]),
+  );
+
+  databaseState.update((state) => ({
+    ...state,
+    tables: state.tables
+      .filter((table) => mainTables.has(table.name))
+      .map((table) => {
+        const catalogTable = mainTables.get(table.name);
+        if (!catalogTable) return table;
+        return {
+          ...table,
+          columns: catalogTable.columns.map(({ name, type }) => ({
+            name,
+            type,
+          })),
+          rowCount: catalogTable.rowCount ?? table.rowCount,
+        };
+      }),
+  }));
+}
+
+/**
+ * Execute SQL for WebMCP and return the complete result while keeping the UI in sync.
+ */
+export async function executeWebMCPQuery(
+  sql: string,
+  signal?: AbortSignal,
+): Promise<WebMCPQueryResult> {
+  if (!db || !conn) {
+    await initDatabase();
+  }
+
+  const cleanSql = stripTrailingSemicolons(sql);
+  const statementType =
+    cleanSql.match(/^\s*([a-z]+)/i)?.[1]?.toUpperCase() ?? "UNKNOWN";
+  const catalogChanged = /\b(CREATE|DROP|ALTER|ATTACH|DETACH)\b/i.test(
+    cleanSql,
+  );
+
+  if (!conn) {
+    return {
+      ok: false,
+      sql: cleanSql,
+      statementType,
+      columns: [],
+      rows: [],
+      rowCount: 0,
+      executionMs: null,
+      catalogChanged,
+      error: "Database not initialized",
+    };
+  }
+
+  if (!cleanSql) {
+    return {
+      ok: false,
+      sql: cleanSql,
+      statementType,
+      columns: [],
+      rows: [],
+      rowCount: 0,
+      executionMs: null,
+      catalogChanged,
+      error: "Query is empty",
+    };
+  }
+
+  try {
+    throwIfAborted(signal);
+    databaseState.update((state) => ({
+      ...state,
+      isQuerying: true,
+      error: null,
+    }));
+
+    const startTime = performance.now();
+    const result = await conn.query(cleanSql);
+    throwIfAborted(signal);
+
+    const columns: ColumnInfo[] = [];
+    for (let index = 0; index < result.numCols; index++) {
+      const field = result.schema.fields[index];
+      columns.push({ name: field.name, type: field.type.toString() });
+    }
+
+    const uiRows: Record<string, unknown>[] = [];
+    const rows: Record<string, unknown>[] = [];
+    for (let rowIndex = 0; rowIndex < result.numRows; rowIndex++) {
+      const uiRow: Record<string, unknown> = {};
+      const serializedRow: Record<string, unknown> = {};
+
+      for (let columnIndex = 0; columnIndex < result.numCols; columnIndex++) {
+        const field = result.schema.fields[columnIndex];
+        const value = result.getChildAt(columnIndex)?.get(rowIndex);
+        uiRow[field.name] = value;
+        serializedRow[field.name] = serializeValue(value);
+      }
+
+      if (rowIndex < PAGE_SIZE) {
+        uiRows.push(uiRow);
+      }
+      rows.push(serializedRow);
+    }
+
+    const executionMs = performance.now() - startTime;
+    currentOffset = 0;
+    if (isReadableQuery(cleanSql)) {
+      baseQuery = cleanSql;
+    }
+
+    databaseState.update((state) => ({
+      ...state,
+      isQuerying: false,
+      columns,
+      rows: uiRows,
+      totalRows: rows.length,
+      queryTime: executionMs,
+      lastQuery: cleanSql,
+    }));
+
+    return {
+      ok: true,
+      sql: cleanSql,
+      statementType,
+      columns,
+      rows,
+      rowCount: rows.length,
+      executionMs,
+      catalogChanged,
+      error: null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Query failed";
+    databaseState.update((state) => ({
+      ...state,
+      isQuerying: false,
+      error: message,
+    }));
+
+    return {
+      ok: false,
+      sql: cleanSql,
+      statementType,
+      columns: [],
+      rows: [],
+      rowCount: 0,
+      executionMs: null,
+      catalogChanged,
+      error: message,
+    };
+  }
+}
+
+/**
  * Drop a table and remove it from state
  */
-export async function dropTable(tableName: string): Promise<void> {
+export async function dropTable(tableName: string): Promise<boolean> {
   if (!conn) {
     databaseState.update((s) => ({ ...s, error: "Database not connected" }));
-    return;
+    return false;
   }
 
   try {
@@ -339,6 +636,7 @@ export async function dropTable(tableName: string): Promise<void> {
         );
       }
     }
+    return true;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to drop table";
@@ -348,6 +646,7 @@ export async function dropTable(tableName: string): Promise<void> {
       error: message,
     }));
     console.error("Drop table error:", error);
+    return false;
   }
 }
 

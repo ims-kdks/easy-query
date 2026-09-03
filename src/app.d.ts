@@ -1,4 +1,5 @@
 /// <reference types="@sveltejs/kit" />
+/// <reference types="webmcp-types" />
 
 declare global {
   const __APP_VERSION__: string;

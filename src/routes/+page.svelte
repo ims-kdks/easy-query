@@ -11,10 +11,13 @@ import {
   databaseState,
   dropTable,
   executeQuery,
+  executeWebMCPQuery,
   exportQueryResult,
   getPendingRestoreCount,
   initDatabase,
+  listCatalogTables,
   loadDataFile,
+  reconcileLoadedTables,
   restoreFromStoredHandles,
   restorePendingFiles,
 } from "$lib/duckdb/client";
@@ -28,6 +31,7 @@ import {
   type SortState,
   stripTrailingSemicolons,
 } from "$lib/duckdb/uiQuery";
+import { registerWebMCPTools, type TabRename } from "$lib/webmcp";
 import type { WorkspaceTab } from "$lib/workspaceTabs";
 
 const brand = "Easy Query";
@@ -61,6 +65,7 @@ let activeSort = $state<SortState | null>(null);
 let activeFilter = $state<FilterState | null>(null);
 let activeSearchTerm = $state("");
 let nextResultId = 1;
+let isWebMCPReady = $state(false);
 
 function getFileType(fileName: string): string {
   return fileName.split(".").pop()?.toUpperCase() ?? "FILE";
@@ -114,17 +119,24 @@ function syncFileTabs() {
   }
 }
 
-function createResultTab(sql: string) {
+function createQueryTab(
+  sql = "",
+  name?: string,
+  activate = true,
+): WorkspaceTab {
   const id = `result:${nextResultId}`;
   const tab: WorkspaceTab = {
     id,
-    name: `Query ${nextResultId}`,
+    name: name?.trim() || `Query ${nextResultId}`,
     type: "RESULT",
     sql,
   };
   nextResultId += 1;
   workspaceTabs = [...workspaceTabs, tab];
-  activeTabId = id;
+  if (activate || !activeTabId) {
+    activeTabId = id;
+  }
+  return tab;
 }
 
 function ensureBaseQuery(): string {
@@ -194,14 +206,14 @@ async function handleQuery(sql: string) {
       workspaceTabs = workspaceTabs.map((tab) =>
         tab.id === selectedTab.id ? { ...tab, sql: defaultQuery } : tab,
       );
-      createResultTab(query);
+      createQueryTab(query);
     }
   } else if (selectedTab) {
     workspaceTabs = workspaceTabs.map((tab) =>
       tab.id === selectedTab.id ? { ...tab, sql: query } : tab,
     );
   } else {
-    createResultTab(query);
+    createQueryTab(query);
   }
 
   if (isReadableQuery(query)) {
@@ -265,30 +277,7 @@ async function handleTabClick(tabId: string) {
 }
 
 async function handleTabClose(tabId: string) {
-  const tabIndex = workspaceTabs.findIndex((tab) => tab.id === tabId);
-  if (tabIndex < 0) return;
-
-  const tab = workspaceTabs[tabIndex];
-  const remainingTabs = workspaceTabs.filter((item) => item.id !== tabId);
-  const nextTab =
-    remainingTabs[Math.min(tabIndex, remainingTabs.length - 1)] ?? null;
-  const wasActive = activeTabId === tabId;
-
-  if (tab.tableName) {
-    await dropTable(tab.tableName);
-  }
-
-  workspaceTabs = remainingTabs;
-
-  if (wasActive) {
-    activeTabId = nextTab?.id ?? null;
-    if (nextTab) {
-      await handleTabClick(nextTab.id);
-    } else {
-      baseQuery = null;
-      resetUiModifiers();
-    }
-  }
+  await closeTabs([tabId]);
 }
 
 function handleTabRename(tabId: string, name: string) {
@@ -298,6 +287,186 @@ function handleTabRename(tabId: string, name: string) {
   workspaceTabs = workspaceTabs.map((tab) =>
     tab.id === tabId ? { ...tab, name: trimmedName } : tab,
   );
+}
+
+async function closeTabs(tabIds: string[]) {
+  const requestedIds = [...new Set(tabIds)];
+  const tabsById = new Map(workspaceTabs.map((tab) => [tab.id, tab]));
+  const closed: string[] = [];
+  const failed: Array<{ tab_id: string; error: string }> = [];
+
+  for (const tabId of requestedIds) {
+    const tab = tabsById.get(tabId);
+    if (!tab) {
+      failed.push({ tab_id: tabId, error: "Tab not found" });
+      continue;
+    }
+
+    if (tab.tableName && !(await dropTable(tab.tableName))) {
+      failed.push({ tab_id: tabId, error: "Failed to unload table" });
+      continue;
+    }
+
+    closed.push(tabId);
+  }
+
+  const closedIds = new Set(closed);
+  const activeIndex = workspaceTabs.findIndex((tab) => tab.id === activeTabId);
+  const activeWasClosed = activeTabId ? closedIds.has(activeTabId) : false;
+  workspaceTabs = workspaceTabs.filter((tab) => !closedIds.has(tab.id));
+
+  if (activeWasClosed) {
+    const nextTab =
+      workspaceTabs[Math.min(activeIndex, workspaceTabs.length - 1)] ?? null;
+    activeTabId = nextTab?.id ?? null;
+    if (nextTab) {
+      await handleTabClick(nextTab.id);
+    } else {
+      baseQuery = null;
+      resetUiModifiers();
+    }
+  }
+
+  return { ok: failed.length === 0, closed, failed };
+}
+
+async function handleWebMCPListTables(signal: AbortSignal) {
+  return { ok: true, tables: await listCatalogTables(signal) };
+}
+
+function handleWebMCPListTabs() {
+  return {
+    ok: true,
+    active_tab_id: activeTabId,
+    tabs: workspaceTabs.map((tab) => ({
+      id: tab.id,
+      name: tab.name,
+      type: tab.type,
+      active: tab.id === activeTabId,
+      table_name: tab.tableName ?? null,
+      file_name: tab.fileName ?? null,
+    })),
+  };
+}
+
+function handleWebMCPCreateQueryTab(input: {
+  name?: string;
+  sql?: string;
+  activate: boolean;
+}) {
+  const tab = createQueryTab(input.sql ?? "", input.name, input.activate);
+  return {
+    ok: true,
+    tab: {
+      id: tab.id,
+      name: tab.name,
+      type: tab.type,
+      active: tab.id === activeTabId,
+    },
+  };
+}
+
+async function handleWebMCPActivateTab(tabId: string) {
+  const tab = workspaceTabs.find((item) => item.id === tabId);
+  if (!tab) return { ok: false, error: "Tab not found", tab_id: tabId };
+
+  await handleTabClick(tabId);
+  return {
+    ok: true,
+    tab_id: tabId,
+    name: tab.name,
+    query_error: $databaseState.error,
+  };
+}
+
+function handleWebMCPRenameTabs(renames: TabRename[]) {
+  const renamed: Array<{ tab_id: string; name: string }> = [];
+  const failed: Array<{ tab_id: string; error: string }> = [];
+
+  for (const rename of renames) {
+    if (!workspaceTabs.some((tab) => tab.id === rename.tabId)) {
+      failed.push({ tab_id: rename.tabId, error: "Tab not found" });
+      continue;
+    }
+    handleTabRename(rename.tabId, rename.name);
+    renamed.push({ tab_id: rename.tabId, name: rename.name.trim() });
+  }
+
+  return { ok: failed.length === 0, renamed, failed };
+}
+
+function handleWebMCPReadQuery(tabId: string) {
+  const tab = workspaceTabs.find((item) => item.id === tabId);
+  if (!tab) return { ok: false, error: "Tab not found", tab_id: tabId };
+  return { ok: true, tab_id: tab.id, name: tab.name, sql: tab.sql };
+}
+
+function handleWebMCPWriteQuery(tabId: string, sql: string) {
+  const tab = workspaceTabs.find((item) => item.id === tabId);
+  if (!tab) return { ok: false, error: "Tab not found", tab_id: tabId };
+
+  workspaceTabs = workspaceTabs.map((item) =>
+    item.id === tabId ? { ...item, sql } : item,
+  );
+  return { ok: true, tab_id: tabId, sql };
+}
+
+async function handleWebMCPRunQuery(tabId: string, signal: AbortSignal) {
+  const tab = workspaceTabs.find((item) => item.id === tabId);
+  if (!tab) return { ok: false, error: "Tab not found", tab_id: tabId };
+
+  const query = stripTrailingSemicolons(tab.sql);
+  if (!query) return { ok: false, error: "Query is empty", tab_id: tabId };
+
+  let resultTabId = tabId;
+  if (tab.tableName) {
+    const defaultQuery = buildTableQuery(tab.tableName);
+    if (query !== defaultQuery) {
+      workspaceTabs = workspaceTabs.map((item) =>
+        item.id === tab.id ? { ...item, sql: defaultQuery } : item,
+      );
+      resultTabId = createQueryTab(query).id;
+    } else {
+      activeTabId = tabId;
+    }
+  } else {
+    activeTabId = tabId;
+  }
+
+  if (isReadableQuery(query)) {
+    setBaseQuery(query);
+  } else {
+    resetUiModifiers();
+  }
+
+  const result = await executeWebMCPQuery(query, signal);
+
+  if (result.catalogChanged) {
+    const catalogTables = await listCatalogTables(signal);
+    reconcileLoadedTables(catalogTables);
+    const mainTableNames = new Set(
+      catalogTables
+        .filter((catalogTable) => catalogTable.schema === "main")
+        .map((catalogTable) => catalogTable.name),
+    );
+    workspaceTabs = workspaceTabs.filter(
+      (workspaceTab) =>
+        !workspaceTab.tableName || mainTableNames.has(workspaceTab.tableName),
+    );
+  }
+
+  return {
+    ok: result.ok,
+    tab_id: resultTabId,
+    sql: result.sql,
+    statement_type: result.statementType,
+    columns: result.columns,
+    rows: result.rows,
+    row_count: result.rowCount,
+    execution_ms: result.executionMs,
+    catalog_changed: result.catalogChanged,
+    error: result.error,
+  };
 }
 
 async function handleExport(format: ExportFormat) {
@@ -361,8 +530,10 @@ async function handleRestorePendingFiles() {
   }
 }
 
-onMount(async () => {
+async function initializePage(signal: AbortSignal) {
   await initDatabase();
+  if (signal.aborted) return;
+
   // Try to auto-restore files with already-granted permission
   const restoredCount = await restoreFromStoredHandles();
   if (restoredCount > 0) {
@@ -375,6 +546,32 @@ onMount(async () => {
   }
   // Check if there are files that need permission re-granting
   pendingRestoreCount = await getPendingRestoreCount();
+
+  isWebMCPReady = await registerWebMCPTools(
+    {
+      listTables: handleWebMCPListTables,
+      listTabs: handleWebMCPListTabs,
+      createQueryTab: handleWebMCPCreateQueryTab,
+      activateTab: handleWebMCPActivateTab,
+      closeTabs,
+      renameTabs: handleWebMCPRenameTabs,
+      readQuery: handleWebMCPReadQuery,
+      writeQuery: handleWebMCPWriteQuery,
+      runQuery: handleWebMCPRunQuery,
+    },
+    signal,
+  );
+}
+
+onMount(() => {
+  const controller = new AbortController();
+  void initializePage(controller.signal).catch((error) => {
+    if (dev) {
+      console.error("Page initialization failed:", error);
+    }
+  });
+
+  return () => controller.abort();
 });
 </script>
 
@@ -442,6 +639,7 @@ onMount(async () => {
     queryTime={$databaseState.queryTime}
     error={$databaseState.error}
     isLoading={$databaseState.isLoading || $databaseState.isQuerying}
+    {isWebMCPReady}
   />
 </div>
 

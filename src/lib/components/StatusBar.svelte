@@ -7,9 +7,16 @@ interface Props {
   queryTime: number | null;
   error: string | null;
   isLoading?: boolean;
+  isWebMCPReady?: boolean;
 }
 
-let { totalRows, queryTime, error, isLoading = false }: Props = $props();
+let {
+  totalRows,
+  queryTime,
+  error,
+  isLoading = false,
+  isWebMCPReady = false,
+}: Props = $props();
 let showErrorDialog = $state(false);
 let showWhyDialog = $state(false);
 const appVersion = __APP_VERSION__;
@@ -80,6 +87,9 @@ function closeWhyDialog() {
   </div>
 
   <div class="flex items-center gap-3 text-slate-500">
+    {#if isWebMCPReady}
+      <span class="text-emerald-500">WebMCP ready</span>
+    {/if}
     <!-- Version/info -->
     <span class="text-slate-600">v{appVersion}</span>
     <button
