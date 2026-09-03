@@ -283,12 +283,14 @@ onDestroy(() => {
                         <div class="min-h-0 flex-1 space-y-1 overflow-y-auto">
                             {#each tables as table (table.name)}
                                 {@const isActive = table.name === activeTable}
-                                <div class="flex h-9 items-stretch gap-1">
+                                <div
+                                    class="group flex h-9 items-stretch rounded border transition-colors {isActive
+                                        ? 'border-emerald-500 bg-emerald-500/10'
+                                        : 'border-slate-700 bg-slate-900 hover:border-slate-600 hover:bg-slate-800/70'}"
+                                >
                                     <button
                                         type="button"
-                                        class="min-w-0 flex-1 rounded border px-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 {isActive
-                                            ? 'border-emerald-500 bg-emerald-500/10'
-                                            : 'border-slate-700 bg-slate-900 hover:border-emerald-500 hover:bg-emerald-500/5'}"
+                                        class="min-w-0 flex-1 rounded-l px-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500/60"
                                         onclick={() =>
                                             ontableclick?.(table.name)}
                                         title={`${table.fileName} · ${table.rowCount.toLocaleString()} rows · ${table.columns.length} columns`}
@@ -313,13 +315,13 @@ onDestroy(() => {
                                     </button>
                                     <button
                                         type="button"
-                                        class="flex w-8 items-center justify-center rounded border border-slate-700 text-slate-500 transition-colors hover:border-red-400 hover:bg-red-500/10 hover:text-red-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
-                                        aria-label={`Delete ${table.name}`}
-                                        title={`Delete ${table.name}`}
+                                        class="m-1 ml-0 flex w-7 items-center justify-center rounded text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
+                                        aria-label={`Close ${table.name}`}
+                                        title={`Close ${table.name}`}
                                         onclick={() =>
                                             ontabledelete?.(table.name)}
                                     >
-                                        <Icon name="trash" class="h-3.5 w-3.5" />
+                                        <Icon name="x" class="h-3.5 w-3.5" />
                                     </button>
                                 </div>
                             {/each}
