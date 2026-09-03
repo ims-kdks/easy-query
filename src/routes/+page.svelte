@@ -36,7 +36,7 @@ import type { WorkspaceTab } from "$lib/workspaceTabs";
 
 const brand = "Easy Query";
 const siteUrl = "https://csv-studio-plus.vercel.app";
-const shareImage = `${siteUrl}/screenshot-v0.7.png`;
+const shareImage = `${siteUrl}/screenshot-v0.3.png`;
 const pageDescription = `${brand} is a free, high-performance CSV/TSV/Parquet/JSON/JSONL viewer built with Svelte and DuckDB-Wasm. Run SQL and cross-table joins in your browser - no uploads required.`;
 const ogTitle = `${brand} | Fast in-browser CSV/TSV/Parquet/JSON/JSONL viewer with SQL`;
 const ogDescription = `Free, high-performance CSV/TSV/Parquet/JSON/JSONL viewer built with Svelte and DuckDB-Wasm. Run SQL and cross-table joins in your browser with ${brand}.`;

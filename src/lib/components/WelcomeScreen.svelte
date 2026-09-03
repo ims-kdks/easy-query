@@ -32,20 +32,14 @@ let {
         <div class="flex items-center gap-4">
           <img src="/favicon.png" alt={brand} class="w-12 h-12 rounded-xl" />
           <h2 class="text-2xl font-semibold text-slate-100">
-            High-Performance Data Viewer with SQL Support
+            Data Viewer with SQL Support
           </h2>
         </div>
 
-        <p class="text-slate-400 leading-relaxed">
-          Load CSV/TSV/Parquet/JSON/JSONL and run cross-table SQL in your browser - powered by
-          <span class="text-emerald-500"><a href="https://svelte.dev">Svelte</a></span>
-          +
-          <span class="text-emerald-500"
-            ><a href="https://duckdb.org/docs/stable/clients/wasm/overview">DuckDB-Wasm</a></span
-          >.
-        </p>
-
         <ul class="list-disc list-inside text-slate-400 text-sm space-y-1.5">
+          <li>
+            <span class="text-emerald-500">AI-assisted</span> data analysis with WebMCP
+          </li>
           <li>Free to use, in-browser only, <span class="text-emerald-500">no data uploads</span></li>
           <li>CSV, TSV, Parquet, JSON, and JSONL file support</li>
           <li>
@@ -54,14 +48,19 @@ let {
           </li>
           <li>
             High-performance virtual scrolling for millions of rows, no paging
-            (<span class="text-emerald-500">just scroll.</span>)
+            (<span class="text-emerald-500">just scroll!</span>)
           </li>
-          <li>Built with Svelte for a responsive UI</li>
+          <li>
+            Powered by
+            <span class="text-emerald-500"><a href="https://svelte.dev">Svelte</a></span>
+            +
+            <span class="text-emerald-500"><a href="https://duckdb.org/docs/stable/clients/wasm/overview">DuckDB-Wasm</a></span>
+          </li>
         </ul>
 
         <div>
           <img
-            src="/screenshot-v0.1.png"
+            src="/screenshot-v0.3.png"
             alt={`${brand} interface screenshot`}
             class="w-full rounded-xl border border-slate-700 shadow-lg bg-slate-300 hover:bg-slate-100 transition-all duration-500 ease-out"
             loading="lazy"
