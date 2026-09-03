@@ -21,6 +21,7 @@ interface Props {
   totalRows: number;
   isQuerying: boolean;
   isExporting: boolean;
+  activeTable: string | null;
   onquery?: (sql: string) => void | Promise<void>;
   onfileselectmultiple?: (files: File[]) => void | Promise<void>;
   ontabledelete?: (tableName: string) => void | Promise<void>;
@@ -38,6 +39,7 @@ let {
   totalRows,
   isQuerying,
   isExporting,
+  activeTable,
   onquery,
   onfileselectmultiple,
   ontabledelete,
@@ -280,23 +282,32 @@ onDestroy(() => {
                         </h3>
                         <div class="min-h-0 flex-1 space-y-1 overflow-y-auto">
                             {#each tables as table (table.name)}
+                                {@const isActive = table.name === activeTable}
                                 <div class="flex h-9 items-stretch gap-1">
                                     <button
                                         type="button"
-                                        class="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-2 text-left transition-colors hover:border-emerald-500 hover:bg-emerald-500/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+                                        class="min-w-0 flex-1 rounded border px-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 {isActive
+                                            ? 'border-emerald-500 bg-emerald-500/10'
+                                            : 'border-slate-700 bg-slate-900 hover:border-emerald-500 hover:bg-emerald-500/5'}"
                                         onclick={() =>
                                             ontableclick?.(table.name)}
                                         title={`${table.fileName} · ${table.rowCount.toLocaleString()} rows · ${table.columns.length} columns`}
                                         aria-label={`View ${table.name}`}
+                                        aria-pressed={isActive}
                                     >
                                         <div class="flex min-w-0 items-baseline gap-2">
                                             <span
-                                                class="min-w-0 flex-1 truncate text-xs font-medium text-slate-200"
+                                                class="min-w-0 flex-1 truncate text-xs font-medium {isActive
+                                                    ? 'text-emerald-200'
+                                                    : 'text-slate-200'}"
                                             >{table.name}</span>
                                             <span
                                                 class="flex-none text-[10px] text-slate-500"
                                             >
-                                                {table.rowCount.toLocaleString()} × {table.columns.length}
+                                                {table.fileName
+                                                    .split(".")
+                                                    .pop()
+                                                    ?.toUpperCase()}
                                             </span>
                                         </div>
                                     </button>

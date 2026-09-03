@@ -47,6 +47,7 @@ const structuredData = {
 };
 
 let showWelcome = $derived($databaseState.tables.length === 0);
+let activeTable = $state<string | null>(null);
 let baseQuery = $state<string | null>(null);
 let activeSort = $state<SortState | null>(null);
 let activeFilter = $state<FilterState | null>(null);
@@ -101,6 +102,7 @@ function applyUiQuery() {
 async function handleFilesSelect(files: File[]) {
   for (const file of files) {
     await loadDataFile(file);
+    activeTable = $databaseState.tables.at(-1)?.name ?? null;
   }
 }
 
@@ -144,9 +146,19 @@ function handleOpenExportDialog() {
 }
 
 function handleTableClick(tableName: string) {
+  activeTable = tableName;
   const query = buildTableQuery(tableName);
   setBaseQuery(query);
   executeQuery(query);
+}
+
+async function handleTableDelete(tableName: string) {
+  const wasActive = activeTable === tableName;
+  await dropTable(tableName);
+
+  if (wasActive) {
+    activeTable = $databaseState.tables[0]?.name ?? null;
+  }
 }
 
 async function handleExport(format: ExportFormat) {
@@ -170,6 +182,15 @@ let pendingRestoreCount = $state(0);
 let isRestoring = $state(false);
 
 $effect(() => {
+  const tables = $databaseState.tables;
+  if (tables.length === 0) {
+    activeTable = null;
+  } else if (!tables.some((table) => table.name === activeTable)) {
+    activeTable = tables[0].name;
+  }
+});
+
+$effect(() => {
   const lastQuery = $databaseState.lastQuery;
   if (!lastQuery) return;
 
@@ -190,6 +211,7 @@ async function handleRestorePendingFiles() {
   try {
     const restoredCount = await restorePendingFiles();
     if (restoredCount > 0) {
+      activeTable = $databaseState.tables.at(-1)?.name ?? null;
       if (dev) {
         console.info(`Restored ${restoredCount} file(s) from previous session`);
       }
@@ -206,6 +228,7 @@ onMount(async () => {
   // Try to auto-restore files with already-granted permission
   const restoredCount = await restoreFromStoredHandles();
   if (restoredCount > 0) {
+    activeTable = $databaseState.tables.at(-1)?.name ?? null;
     if (dev) {
       console.info(
         `Auto-restored ${restoredCount} file(s) from previous session`,
@@ -257,9 +280,10 @@ onMount(async () => {
         totalRows={$databaseState.totalRows}
         isQuerying={$databaseState.isQuerying}
         {isExporting}
+        {activeTable}
         onquery={handleQuery}
         onfileselectmultiple={handleFilesSelect}
-        ontabledelete={dropTable}
+        ontabledelete={handleTableDelete}
         ontableclick={handleTableClick}
         onsearch={handleSearch}
         onsort={handleSort}
