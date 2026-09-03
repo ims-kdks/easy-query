@@ -10,29 +10,27 @@ import Icon from "./Icon.svelte";
 
 interface Props {
   tables: TableInfo[];
+  query: string;
   isLoading?: boolean;
   onexecute?: (query: string) => void;
+  onchange?: (query: string) => void;
   oncollapse?: () => void;
 }
 
-let { tables, isLoading = false, onexecute, oncollapse }: Props = $props();
+let {
+  tables,
+  query,
+  isLoading = false,
+  onexecute,
+  onchange,
+  oncollapse,
+}: Props = $props();
 
 let editorContainer: HTMLDivElement;
 let editor = $state<EditorView | null>(null);
 let showTooltip = $state(false);
 const sqlConfigCompartment = new Compartment();
 let sqlConfig = $derived(() => buildSqlConfig(tables));
-
-function quoteIdentifier(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
-}
-
-let defaultQuery = $derived(() => {
-  if (tables.length > 0) {
-    return `SELECT * FROM ${quoteIdentifier(tables[0].name)}`;
-  }
-  return "SELECT * FROM table_name";
-});
 
 function executeQuery() {
   if (!editor || isLoading) return;
@@ -136,13 +134,18 @@ onMount(() => {
 
   editor = new EditorView({
     state: EditorState.create({
-      doc: defaultQuery(),
+      doc: query,
       extensions: [
         executeKeymap, // Must be first with highest priority
         basicSetup,
         sqlConfigCompartment.of(sql(sqlConfig())),
         darkTheme,
         EditorView.lineWrapping,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            onchange?.(update.state.doc.toString());
+          }
+        }),
       ],
     }),
     parent: editorContainer,
@@ -153,26 +156,24 @@ onMount(() => {
   };
 });
 
+$effect(() => {
+  if (!editor || editor.state.doc.toString() === query) return;
+
+  editor.dispatch({
+    changes: {
+      from: 0,
+      to: editor.state.doc.length,
+      insert: query,
+    },
+  });
+});
+
 // Detect platform for keyboard shortcut display
 const isMac =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPod|iPad/i.test(navigator.platform);
 const modKey = isMac ? "Cmd" : "Ctrl";
 const shortcutText = `${modKey} + Enter to run`;
-
-// Update editor when tables change
-$effect(() => {
-  if (editor && tables.length > 0 && !editor.state.doc.toString().trim()) {
-    const query = defaultQuery();
-    editor.dispatch({
-      changes: {
-        from: 0,
-        to: editor.state.doc.length,
-        insert: query,
-      },
-    });
-  }
-});
 
 $effect(() => {
   if (!editor) return;
