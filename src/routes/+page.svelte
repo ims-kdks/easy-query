@@ -40,6 +40,16 @@ const shareImage = `${siteUrl}/screenshot-v0.7.png`;
 const pageDescription = `${brand} is a free, high-performance CSV/TSV/Parquet/JSON/JSONL viewer built with Svelte and DuckDB-Wasm. Run SQL and cross-table joins in your browser - no uploads required.`;
 const ogTitle = `${brand} | Fast in-browser CSV/TSV/Parquet/JSON/JSONL viewer with SQL`;
 const ogDescription = `Free, high-performance CSV/TSV/Parquet/JSON/JSONL viewer built with Svelte and DuckDB-Wasm. Run SQL and cross-table joins in your browser with ${brand}.`;
+const demoTableNames = [
+  "dataset_metadata",
+  "neighborhoods",
+  "stations",
+  "vehicles",
+  "riders",
+  "weather_hourly",
+  "trips",
+  "maintenance_events",
+];
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
@@ -186,12 +196,49 @@ function applyUiQuery() {
   );
 }
 
-async function handleFilesSelect(files: File[]) {
+async function loadFiles(files: File[]): Promise<number> {
+  let loadedCount = 0;
   for (const file of files) {
     const tableName = await loadDataFile(file);
     if (tableName) {
       addFileTab(tableName);
+      loadedCount += 1;
     }
+  }
+  return loadedCount;
+}
+
+async function handleFilesSelect(files: File[]) {
+  await loadFiles(files);
+}
+
+async function handleLoadDemo() {
+  isLoadingDemo = true;
+  demoLoadError = null;
+
+  try {
+    const files = await Promise.all(
+      demoTableNames.map(async (tableName) => {
+        const fileName = `${tableName}.parquet`;
+        const response = await fetch(`/demo/metro_move/${fileName}`);
+        if (!response.ok) {
+          throw new Error(`Could not download ${fileName}`);
+        }
+        return new File([await response.blob()], fileName, {
+          type: "application/vnd.apache.parquet",
+        });
+      }),
+    );
+
+    const loadedCount = await loadFiles(files);
+    if (loadedCount !== files.length) {
+      throw new Error("Some demo tables could not be loaded");
+    }
+  } catch (error) {
+    demoLoadError =
+      error instanceof Error ? error.message : "Could not load demo data";
+  } finally {
+    isLoadingDemo = false;
   }
 }
 
@@ -488,6 +535,8 @@ let isExporting = $state(false);
 let exportError = $state<string | null>(null);
 let pendingRestoreCount = $state(0);
 let isRestoring = $state(false);
+let isLoadingDemo = $state(false);
+let demoLoadError = $state<string | null>(null);
 
 $effect(() => {
   if (workspaceTabs.length === 0) {
@@ -604,7 +653,10 @@ onMount(() => {
         {brand}
         {pendingRestoreCount}
         {isRestoring}
+        {isLoadingDemo}
+        {demoLoadError}
         onrestorependingfiles={handleRestorePendingFiles}
+        ondemoload={handleLoadDemo}
         onfileselectmultiple={handleFilesSelect}
       />
     {:else}

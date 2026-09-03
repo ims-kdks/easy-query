@@ -15,6 +15,7 @@ type IconName =
   | "code"
   | "upload"
   | "download"
+  | "database"
   | "chat"
   | "trash"
   | "refresh"
@@ -111,6 +112,10 @@ let strokeWidth = $derived(name === "panel" ? 1.6 : 2);
             <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
             <path d="M12 4v12" />
             <path d="M8 12l4 4 4-4" />
+        {:else if name === "database"}
+            <ellipse cx="12" cy="5" rx="8" ry="3" />
+            <path d="M4 5v7c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+            <path d="M4 12v7c0 1.66 3.58 3 8 3s8-1.34 8-3v-7" />
         {:else if name === "chat"}
             <path
                 d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4-.8L3 20l1.324-3.973C3.48 14.913 3 13.502 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"

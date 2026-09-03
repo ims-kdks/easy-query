@@ -13,6 +13,7 @@ A high-performance, browser-based data viewer powered by **DuckDB-Wasm** and **S
 - **Table Management**: Remove loaded tables from the session
 - **Export Results**: Download query results as CSV, TSV, or Parquet
 - **Session Restore (Chromium)**: Remember imported files (picker and drag-drop when supported) across page reloads
+- **Built-in Demo**: Load eight related synthetic urban-mobility Parquet tables with one click
 - **100% Client-Side**: All processing happens in your browser - no data is uploaded anywhere
 
 ## Tech Stack
@@ -60,16 +61,17 @@ npm run check
 npm run format
 ```
 
-## Synthetic Demo Database
+## Synthetic Demo Data
 
-The deterministic synthetic urban-mobility Postgres dataset and seeding instructions live in
+The deterministic synthetic urban-mobility Parquet generator lives in
 [`scripts/metro_move`](scripts/metro_move/README.md). The generated data is
-fictional, contains no personal information, and does not incorporate third-party
-datasets.
+fictional, contains no personal information, and does not incorporate
+third-party datasets. The app serves the generated files from
+`static/demo/metro_move` for its one-click demo.
 
 ## Usage
 
-1. **Load files**: Drag and drop CSV/TSV/Parquet/JSON/JSONL files anywhere on the page, or click the upload area to browse
+1. **Load files**: Try the built-in demo, drag and drop CSV/TSV/Parquet/JSON/JSONL files anywhere on the page, or click the upload area to browse
 2. **View your data**: The data table shows your data with virtual scrolling for large files
 3. **Write SQL queries**: Use the SQL editor to query your data with full DuckDB SQL support
 4. **Sort & Filter**: Use the filter bar for quick sorting and filtering without writing SQL

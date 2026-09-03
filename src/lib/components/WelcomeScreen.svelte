@@ -6,7 +6,10 @@ interface Props {
   brand: string;
   pendingRestoreCount: number;
   isRestoring: boolean;
+  isLoadingDemo: boolean;
+  demoLoadError: string | null;
   onrestorependingfiles?: () => void | Promise<void>;
+  ondemoload?: () => void | Promise<void>;
   onfileselectmultiple?: (files: File[]) => void | Promise<void>;
 }
 
@@ -14,7 +17,10 @@ let {
   brand,
   pendingRestoreCount,
   isRestoring,
+  isLoadingDemo,
+  demoLoadError,
   onrestorependingfiles,
+  ondemoload,
   onfileselectmultiple,
 }: Props = $props();
 </script>
@@ -64,6 +70,30 @@ let {
       </div>
 
       <div class="w-full h-full self-stretch flex flex-col gap-4">
+        <div class="flex-none rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-sm font-medium text-slate-200">Try the urban mobility demo data</p>
+            </div>
+            <button
+              type="button"
+              class="flex shrink-0 items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              onclick={() => ondemoload?.()}
+              disabled={isLoadingDemo}
+            >
+              {#if isLoadingDemo}
+                <Icon name="spinner" class="h-4 w-4 animate-spin" />
+                Loading...
+              {:else}
+                <Icon name="database" class="h-4 w-4" />
+                Load Demo
+              {/if}
+            </button>
+          </div>
+          {#if demoLoadError}
+            <p class="mt-3 text-xs text-red-400">{demoLoadError}</p>
+          {/if}
+        </div>
         {#if pendingRestoreCount > 0}
           <div class="flex-none bg-slate-800/50 border border-slate-700 rounded-xl p-4">
             <div class="flex items-center justify-between gap-4">
