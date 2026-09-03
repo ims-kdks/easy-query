@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onDestroy } from "svelte";
+import { onDestroy, tick } from "svelte";
 import type { ColumnInfo, TableInfo } from "$lib/duckdb/client";
 import type { SortDirection } from "$lib/duckdb/uiQuery";
 import {
@@ -8,6 +8,7 @@ import {
   SUPPORTED_DATA_FILE_EXTENSIONS,
   storeDroppedFileHandles,
 } from "$lib/fileUpload";
+import type { WorkspaceTab } from "$lib/workspaceTabs";
 import DataTable from "./DataTable.svelte";
 import FileUpload from "./FileUpload.svelte";
 import Icon from "./Icon.svelte";
@@ -16,15 +17,21 @@ import SQLEditor from "./SQLEditor.svelte";
 
 interface Props {
   tables: TableInfo[];
+  tabs: WorkspaceTab[];
   columns: ColumnInfo[];
   rows: Record<string, unknown>[];
   totalRows: number;
   isQuerying: boolean;
   isExporting: boolean;
+  activeTabId: string | null;
+  query: string;
+  searchValue: string;
   onquery?: (sql: string) => void | Promise<void>;
+  onquerychange?: (sql: string) => void;
   onfileselectmultiple?: (files: File[]) => void | Promise<void>;
-  ontabledelete?: (tableName: string) => void | Promise<void>;
-  ontableclick?: (tableName: string) => void;
+  ontabclose?: (tabId: string) => void | Promise<void>;
+  ontabclick?: (tabId: string) => void | Promise<void>;
+  ontabrename?: (tabId: string, name: string) => void;
   onsearch?: (searchTerm: string) => void;
   onsort?: (data: { column: string; direction: SortDirection }) => void;
   onfilter?: (data: { column: string; value: string }) => void;
@@ -33,15 +40,21 @@ interface Props {
 
 let {
   tables,
+  tabs,
   columns,
   rows,
   totalRows,
   isQuerying,
   isExporting,
+  activeTabId,
+  query,
+  searchValue,
   onquery,
+  onquerychange,
   onfileselectmultiple,
-  ontabledelete,
-  ontableclick,
+  ontabclose,
+  ontabclick,
+  ontabrename,
   onsearch,
   onsort,
   onfilter,
@@ -65,6 +78,9 @@ let isDropActive = $state(false);
 let pageDragDepth = 0;
 let feedbackMessage = $state<string | null>(null);
 let feedbackTimer: ReturnType<typeof setTimeout> | null = null;
+let editingTabId = $state<string | null>(null);
+let renameValue = $state("");
+let renameInput: HTMLInputElement | null = $state(null);
 
 // Load persisted state on mount
 $effect(() => {
@@ -154,6 +170,37 @@ function startResizeTables(e: MouseEvent) {
 
 function toggleCollapse() {
   isCollapsed = !isCollapsed;
+}
+
+async function startRename(tab: WorkspaceTab) {
+  editingTabId = tab.id;
+  renameValue = tab.name;
+  await tick();
+  renameInput?.focus();
+  renameInput?.select();
+}
+
+function finishRename() {
+  if (!editingTabId) return;
+  const name = renameValue.trim();
+  if (name) {
+    ontabrename?.(editingTabId, name);
+  }
+  editingTabId = null;
+}
+
+function cancelRename() {
+  editingTabId = null;
+}
+
+function handleRenameKeydown(event: KeyboardEvent) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    finishRename();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    cancelRename();
+  }
 }
 
 function resetDropState() {
@@ -253,14 +300,15 @@ onDestroy(() => {
             <div class="flex-1 overflow-hidden flex flex-col min-h-0">
                 <SQLEditor
                     onexecute={onquery}
+                    onchange={onquerychange}
                     {tables}
+                    {query}
                     isLoading={isQuerying}
                     oncollapse={toggleCollapse}
                 />
             </div>
 
-            {#if tables.length > 0}
-                <!-- Tables list resize handle -->
+            {#if tabs.length > 0}
                 <button
                     type="button"
                     class="h-1 cursor-ns-resize hover:bg-emerald-500/50 transition-colors {isResizingTables
@@ -274,54 +322,79 @@ onDestroy(() => {
                     class="flex-none border-t border-slate-700 bg-slate-800/30 flex flex-col overflow-hidden"
                     style="height: {tablesHeight}px"
                 >
-                    <div class="px-3 py-2.5 flex-1 overflow-y-auto min-h-0">
-                        <h3 class="text-xs font-medium text-slate-400 mb-2">
-                            {tables.length}
-                            {tables.length === 1 ? "table" : "tables"} loaded
+                    <div class="flex min-h-0 flex-1 flex-col px-2 py-2">
+                        <h3 class="mb-1.5 px-1 text-xs font-medium text-slate-400">
+                            {tabs.length}
+                            {tabs.length === 1 ? "tab" : "tabs"} open
                         </h3>
-                        <div class="space-y-1.5">
-                            {#each tables as table (table.name)}
-                                <div class="flex items-stretch gap-1">
-                                    <button
-                                        type="button"
-                                        class="flex w-7 items-center justify-center self-stretch rounded border border-slate-700 text-slate-500 hover:text-red-400 hover:border-red-400 hover:bg-red-500/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
-                                        aria-label={`Delete ${table.name}`}
-                                        title={`Delete ${table.name}`}
-                                        onclick={() =>
-                                            ontabledelete?.(table.name)}
-                                    >
-                                        <Icon name="trash" class="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="flex-1 text-left text-xs p-2 rounded bg-slate-900 border border-slate-700 hover:border-emerald-500 hover:bg-emerald-500/5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
-                                        onclick={() =>
-                                            ontableclick?.(table.name)}
-                                        title={`View ${table.name}`}
-                                        aria-label={`View ${table.name}`}
-                                    >
-                                        <div class="font-medium text-slate-200">
-                                            {table.name}
-                                        </div>
-                                        <div class="text-slate-500 mt-0.5">
-                                            {table.rowCount.toLocaleString()} rows
-                                            - {table.columns.length} columns
-                                        </div>
-                                        <div
-                                            class="text-[10px] text-slate-600 mt-0.5 truncate"
-                                            title={table.fileName}
+                        <div class="min-h-0 flex-1 space-y-1 overflow-y-auto">
+                            {#each tabs as tab (tab.id)}
+                                {@const isActive = tab.id === activeTabId}
+                                <div
+                                    class="group flex h-9 items-stretch rounded border transition-colors {isActive
+                                        ? 'border-emerald-500 bg-emerald-500/10'
+                                        : 'border-slate-700 bg-slate-900 hover:border-slate-600 hover:bg-slate-800/70'}"
+                                >
+                                    {#if editingTabId === tab.id}
+                                        <input
+                                            bind:this={renameInput}
+                                            bind:value={renameValue}
+                                            class="m-1 min-w-0 flex-1 rounded border border-emerald-500/70 bg-slate-950 px-1.5 text-xs text-slate-100 outline-none"
+                                            aria-label={`Rename ${tab.name}`}
+                                            onblur={finishRename}
+                                            onkeydown={handleRenameKeydown}
+                                        />
+                                    {:else}
+                                        <button
+                                            type="button"
+                                            class="min-w-0 flex-1 rounded-l px-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500/60"
+                                            onclick={(event) => {
+                                                if (event.detail < 2) {
+                                                    ontabclick?.(tab.id);
+                                                }
+                                            }}
+                                            ondblclick={() => startRename(tab)}
+                                            onkeydown={(event) => {
+                                                if (event.key === "F2") {
+                                                    event.preventDefault();
+                                                    void startRename(tab);
+                                                }
+                                            }}
+                                            title={`${tab.fileName ?? tab.sql} · Double-click or press F2 to rename`}
+                                            aria-label={`View ${tab.name}`}
+                                            aria-pressed={isActive}
                                         >
-                                            {table.fileName}
-                                        </div>
+                                            <div
+                                                class="flex min-w-0 items-baseline gap-2"
+                                            >
+                                                <span
+                                                    class="min-w-0 flex-1 truncate text-xs font-medium {isActive
+                                                        ? 'text-emerald-200'
+                                                        : 'text-slate-200'}"
+                                                >{tab.name}</span>
+                                                <span
+                                                    class="flex-none text-[10px] {tab.type ===
+                                                    'RESULT'
+                                                        ? 'text-violet-400'
+                                                        : 'text-slate-500'}"
+                                                >{tab.type}</span>
+                                            </div>
+                                        </button>
+                                    {/if}
+                                    <button
+                                        type="button"
+                                        class="m-1 ml-0 flex w-7 items-center justify-center rounded text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
+                                        aria-label={`Close ${tab.name}`}
+                                        title={`Close ${tab.name}`}
+                                        onclick={() => ontabclose?.(tab.id)}
+                                    >
+                                        <Icon name="x" class="h-3.5 w-3.5" />
                                     </button>
                                 </div>
                             {/each}
                         </div>
 
-                        <div class="mt-3 pt-3 border-t border-slate-700">
-                            <p class="text-xs font-medium text-slate-400 mb-2">
-                                Add more files
-                            </p>
+                        <div class="mt-2 border-t border-slate-700 pt-2">
                             <FileUpload compact={true} {onfileselectmultiple} />
                         </div>
                     </div>
@@ -353,12 +426,12 @@ onDestroy(() => {
                 <Icon name="panel" class="w-5 h-5" />
             </button>
 
-            {#if tables.length > 0}
+            {#if tabs.length > 0}
                 <div
                     class="mt-2 w-8 h-8 flex items-center justify-center rounded bg-slate-800 text-s font-light text-slate-400"
-                    title={`${tables.length} tables loaded`}
+                    title={`${tabs.length} tabs open`}
                 >
-                    {tables.length}
+                    {tabs.length}
                 </div>
             {/if}
         </div>
@@ -370,6 +443,7 @@ onDestroy(() => {
         >
             <div class="flex items-center gap-3">
                 <SearchInput
+                    value={searchValue}
                     placeholder="Search all columns..."
                     mode="enter"
                     {onsearch}
@@ -378,7 +452,7 @@ onDestroy(() => {
                     type="button"
                     class="ml-auto inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                     onclick={() => onopenexport?.()}
-                    disabled={isExporting || isQuerying || tables.length === 0}
+                    disabled={isExporting || isQuerying}
                 >
                     {#if isExporting}
                         <Icon name="spinner" class="w-4 h-4 animate-spin" />

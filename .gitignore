@@ -28,5 +28,9 @@ npm-debug.log*
 .cache/
 .turbo/
 
+# Browser test artifacts
+.playwright-cli/
+output/playwright/
+
 # AI
 docs/

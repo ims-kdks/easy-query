@@ -28,6 +28,7 @@ import {
   type SortState,
   stripTrailingSemicolons,
 } from "$lib/duckdb/uiQuery";
+import type { WorkspaceTab } from "$lib/workspaceTabs";
 
 const brand = "Easy Query";
 const siteUrl = "https://csv-studio-plus.vercel.app";
@@ -46,15 +47,90 @@ const structuredData = {
   description: pageDescription,
 };
 
-let showWelcome = $derived($databaseState.tables.length === 0);
+let workspaceTabs = $state<WorkspaceTab[]>([]);
+let activeTabId = $state<string | null>(null);
+let activeTab = $derived(
+  workspaceTabs.find((tab) => tab.id === activeTabId) ?? null,
+);
+let editorQuery = $derived(
+  activeTab?.sql ?? buildDefaultTableQuery($databaseState.tables[0]?.name),
+);
+let showWelcome = $derived(workspaceTabs.length === 0);
 let baseQuery = $state<string | null>(null);
 let activeSort = $state<SortState | null>(null);
 let activeFilter = $state<FilterState | null>(null);
 let activeSearchTerm = $state("");
+let nextResultId = 1;
+
+function getFileType(fileName: string): string {
+  return fileName.split(".").pop()?.toUpperCase() ?? "FILE";
+}
+
+function addFileTab(tableName: string) {
+  const table = $databaseState.tables.find((item) => item.name === tableName);
+  if (!table) return;
+
+  const id = `table:${tableName}`;
+  const sql = buildTableQuery(tableName);
+  const existing = workspaceTabs.find((tab) => tab.id === id);
+  const fileTab: WorkspaceTab = {
+    id,
+    name: existing?.name ?? tableName,
+    type: getFileType(table.fileName),
+    sql,
+    tableName,
+    fileName: table.fileName,
+  };
+
+  workspaceTabs = existing
+    ? workspaceTabs.map((tab) => (tab.id === id ? fileTab : tab))
+    : [...workspaceTabs, fileTab];
+  activeTabId = id;
+  setBaseQuery(sql);
+}
+
+function syncFileTabs() {
+  for (const table of $databaseState.tables) {
+    const id = `table:${table.name}`;
+    if (!workspaceTabs.some((tab) => tab.id === id)) {
+      workspaceTabs = [
+        ...workspaceTabs,
+        {
+          id,
+          name: table.name,
+          type: getFileType(table.fileName),
+          sql: buildTableQuery(table.name),
+          tableName: table.name,
+          fileName: table.fileName,
+        },
+      ];
+    }
+  }
+
+  const lastTable = $databaseState.tables.at(-1);
+  if (lastTable) {
+    activeTabId = `table:${lastTable.name}`;
+    setBaseQuery(buildTableQuery(lastTable.name));
+  }
+}
+
+function createResultTab(sql: string) {
+  const id = `result:${nextResultId}`;
+  const tab: WorkspaceTab = {
+    id,
+    name: `Query ${nextResultId}`,
+    type: "RESULT",
+    sql,
+  };
+  nextResultId += 1;
+  workspaceTabs = [...workspaceTabs, tab];
+  activeTabId = id;
+}
 
 function ensureBaseQuery(): string {
   const resolved = stripTrailingSemicolons(
     baseQuery ||
+      activeTab?.sql ||
       $databaseState.lastQuery ||
       buildDefaultTableQuery($databaseState.tables[0]?.name),
   );
@@ -100,13 +176,34 @@ function applyUiQuery() {
 
 async function handleFilesSelect(files: File[]) {
   for (const file of files) {
-    await loadDataFile(file);
+    const tableName = await loadDataFile(file);
+    if (tableName) {
+      addFileTab(tableName);
+    }
   }
 }
 
 async function handleQuery(sql: string) {
   const query = stripTrailingSemicolons(sql);
   if (!query) return;
+
+  const selectedTab = activeTab;
+  if (selectedTab?.tableName) {
+    const defaultQuery = buildTableQuery(selectedTab.tableName);
+    if (query !== defaultQuery) {
+      workspaceTabs = workspaceTabs.map((tab) =>
+        tab.id === selectedTab.id ? { ...tab, sql: defaultQuery } : tab,
+      );
+      createResultTab(query);
+    }
+  } else if (selectedTab) {
+    workspaceTabs = workspaceTabs.map((tab) =>
+      tab.id === selectedTab.id ? { ...tab, sql: query } : tab,
+    );
+  } else {
+    createResultTab(query);
+  }
+
   if (isReadableQuery(query)) {
     setBaseQuery(query);
   } else {
@@ -143,10 +240,64 @@ function handleOpenExportDialog() {
   showExportDialog = true;
 }
 
-function handleTableClick(tableName: string) {
-  const query = buildTableQuery(tableName);
+function handleEditorChange(sql: string) {
+  if (!activeTabId) return;
+  workspaceTabs = workspaceTabs.map((tab) =>
+    tab.id === activeTabId ? { ...tab, sql } : tab,
+  );
+}
+
+async function handleTabClick(tabId: string) {
+  const tab = workspaceTabs.find((item) => item.id === tabId);
+  if (!tab) return;
+
+  activeTabId = tabId;
+  const query = stripTrailingSemicolons(tab.sql);
+  resetUiModifiers();
+
+  if (!query || !isReadableQuery(query)) {
+    baseQuery = null;
+    return;
+  }
+
   setBaseQuery(query);
-  executeQuery(query);
+  await executeQuery(query);
+}
+
+async function handleTabClose(tabId: string) {
+  const tabIndex = workspaceTabs.findIndex((tab) => tab.id === tabId);
+  if (tabIndex < 0) return;
+
+  const tab = workspaceTabs[tabIndex];
+  const remainingTabs = workspaceTabs.filter((item) => item.id !== tabId);
+  const nextTab =
+    remainingTabs[Math.min(tabIndex, remainingTabs.length - 1)] ?? null;
+  const wasActive = activeTabId === tabId;
+
+  if (tab.tableName) {
+    await dropTable(tab.tableName);
+  }
+
+  workspaceTabs = remainingTabs;
+
+  if (wasActive) {
+    activeTabId = nextTab?.id ?? null;
+    if (nextTab) {
+      await handleTabClick(nextTab.id);
+    } else {
+      baseQuery = null;
+      resetUiModifiers();
+    }
+  }
+}
+
+function handleTabRename(tabId: string, name: string) {
+  const trimmedName = name.trim();
+  if (!trimmedName) return;
+
+  workspaceTabs = workspaceTabs.map((tab) =>
+    tab.id === tabId ? { ...tab, name: trimmedName } : tab,
+  );
 }
 
 async function handleExport(format: ExportFormat) {
@@ -170,6 +321,14 @@ let pendingRestoreCount = $state(0);
 let isRestoring = $state(false);
 
 $effect(() => {
+  if (workspaceTabs.length === 0) {
+    activeTabId = null;
+  } else if (!workspaceTabs.some((tab) => tab.id === activeTabId)) {
+    activeTabId = workspaceTabs[0].id;
+  }
+});
+
+$effect(() => {
   const lastQuery = $databaseState.lastQuery;
   if (!lastQuery) return;
 
@@ -190,6 +349,7 @@ async function handleRestorePendingFiles() {
   try {
     const restoredCount = await restorePendingFiles();
     if (restoredCount > 0) {
+      syncFileTabs();
       if (dev) {
         console.info(`Restored ${restoredCount} file(s) from previous session`);
       }
@@ -206,6 +366,7 @@ onMount(async () => {
   // Try to auto-restore files with already-granted permission
   const restoredCount = await restoreFromStoredHandles();
   if (restoredCount > 0) {
+    syncFileTabs();
     if (dev) {
       console.info(
         `Auto-restored ${restoredCount} file(s) from previous session`,
@@ -257,10 +418,16 @@ onMount(async () => {
         totalRows={$databaseState.totalRows}
         isQuerying={$databaseState.isQuerying}
         {isExporting}
+        tabs={workspaceTabs}
+        {activeTabId}
+        query={editorQuery}
+        searchValue={activeSearchTerm}
         onquery={handleQuery}
+        onquerychange={handleEditorChange}
         onfileselectmultiple={handleFilesSelect}
-        ontabledelete={dropTable}
-        ontableclick={handleTableClick}
+        ontabclose={handleTabClose}
+        ontabclick={handleTabClick}
+        ontabrename={handleTabRename}
         onsearch={handleSearch}
         onsort={handleSort}
         onfilter={handleFilter}
