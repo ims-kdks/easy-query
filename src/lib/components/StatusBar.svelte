@@ -66,6 +66,10 @@ function closeWhyDialog() {
       {/if}
     </div>
 
+    <div class="flex items-center gap-1.5 text-slate-400 border-l border-slate-700 pl-4">
+      <span>{totalRows.toLocaleString()} {totalRows === 1 ? "row" : "rows"}</span>
+    </div>
+
     <!-- Query time -->
     {#if queryTime !== null && !isLoading}
       <div class="flex items-center gap-1.5 text-slate-400 border-l border-slate-700 pl-4">

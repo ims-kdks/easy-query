@@ -584,21 +584,6 @@ function handleClickOutside(e: MouseEvent) {
                 </div>
             </div>
         </div>
-
-        <!-- Footer info -->
-        <div
-            class="flex-none px-3 py-1.5 bg-slate-800/50 border-t border-slate-700 text-xs text-slate-500"
-        >
-            <span
-                >Showing {rows.length.toLocaleString()} of {totalRows.toLocaleString()}
-                rows</span
-            >
-            {#if rows.length < totalRows}
-                <span class="ml-2 text-slate-600"
-                    >• Scroll down to load more</span
-                >
-            {/if}
-        </div>
     {/if}
 </div>
 
